@@ -234,7 +234,7 @@ class CutlassFP8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
             ).view(-1, *weight_scale.shape[1:])
             replace_parameter(layer, weight_scale_name, padded_scale.data)
             set_weight_attrs(
-                getattr(layer, weight_name),
+                getattr(layer, weight_scale_name),
                 {
                     "weight_loader": self.padded_weight_loader,
                 },
