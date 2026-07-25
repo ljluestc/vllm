@@ -33,9 +33,14 @@ class HummingLinearKernel(MPLinearKernel):
 
         name_map = {"weight": self.w_q_name, "weight_scale": self.w_s_name}
         group_size = self.config.group_size
+        # Asymmetric (zero-point) checkpoints store weights as unsigned integers
+        # (e.g. uint4, range 0-15). Symmetric biased formats (e.g. uint4b8) are
+        # handled by humming as "int" types. Use "uint" only when explicit zero
+        # points are present so humming dequantizes unsigned values correctly.
+        weight_dtype_prefix = "uint" if self.config.zero_points else "int"
         quant_config = {
             "quant_method": "humming",
-            "dtype": "int" + str(self.config.weight_type.size_bits),
+            "dtype": weight_dtype_prefix + str(self.config.weight_type.size_bits),
             "group_size": 0 if group_size == -1 else group_size,
         }
 
