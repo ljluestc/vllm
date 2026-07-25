@@ -42,6 +42,13 @@ from vllm.v1.worker.cp_utils import get_kv_cache_shard_count
 logger = init_logger(__name__)
 
 
+def _supports_native_mtp_decode_on_current_platform() -> bool:
+    """Whether current device family supports native multi-token decode."""
+    return current_platform.is_device_capability_family(
+        100
+    ) or current_platform.is_device_capability_family(120)
+
+
 @triton.jit
 def _prepare_uniform_decode_kernel(
     seq_lens_ptr,
@@ -508,14 +515,14 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         next_n = self.num_speculative_tokens + 1
         self.decode_threshold = next_n
         self.reorder_batch_threshold = None
-        # NOTE: SM100 datacenter GPUs support any next_n natively via the
-        # multi-atom paged MQA logits kernels (FP8 and FP4 indexer
-        # caches). Outside the SM100 family the FP8
-        # paged MQA logits kernel only supports next_n in (1, 2)
-        # (deepgemm smxx_fp8_fp4_paged_mqa_logits.hpp:233), so flatten there.
-        self.use_flattening = not current_platform.is_device_capability_family(
-            100
-        ) and next_n not in (1, 2)
+        # Native multi-token decode is supported on SM100 and SM120.
+        # Outside these families, the FP8 paged MQA logits kernels support
+        # only next_n in (1, 2) (deepgemm smxx_fp8_fp4_paged_mqa_logits.hpp:233),
+        # so larger next_n must be flattened there.
+        self.use_flattening = (
+            not _supports_native_mtp_decode_on_current_platform()
+            and next_n not in (1, 2)
+        )
         logger.info_once(
             "DSA indexer decode path: use_flattening=%s "
             "(next_n=%d, use_fp4_indexer_cache=%s)",

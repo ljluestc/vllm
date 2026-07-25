@@ -7,7 +7,10 @@ import torch
 import vllm.model_executor.layers.sparse_attn_indexer as sparse_indexer
 from vllm.platforms import current_platform
 from vllm.utils.import_utils import has_cutedsl
-from vllm.v1.attention.backends.mla.indexer import build_prefill_chunk_metadata
+from vllm.v1.attention.backends.mla.indexer import (
+    _supports_native_mtp_decode_on_current_platform,
+    build_prefill_chunk_metadata,
+)
 from vllm.v1.attention.backends.mla.sparse_utils import (
     triton_filter_and_convert_dcp_index,
 )
@@ -17,6 +20,33 @@ from vllm.v1.attention.ops.common import CPTritonContext, correct_attn_out
 
 def _local_count(length: int, rank: int, world: int, interleave: int) -> int:
     return sum(1 for pos in range(length) if (pos // interleave) % world == rank)
+
+@pytest.mark.parametrize(
+    ("sm100", "sm120", "expected"),
+    [
+        (True, False, True),
+        (False, True, True),
+        (False, False, False),
+    ],
+)
+def test_supports_native_mtp_decode_on_current_platform(
+    monkeypatch: pytest.MonkeyPatch, sm100: bool, sm120: bool, expected: bool
+):
+    calls: list[int] = []
+
+    def fake_is_family(family: int) -> bool:
+        calls.append(family)
+        if family == 100:
+            return sm100
+        if family == 120:
+            return sm120
+        return False
+
+    monkeypatch.setattr(
+        current_platform, "is_device_capability_family", fake_is_family
+    )
+    assert _supports_native_mtp_decode_on_current_platform() is expected
+    assert calls == [100] if sm100 else [100, 120]
 
 
 def _global_to_local_indices(
