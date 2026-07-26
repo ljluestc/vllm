@@ -576,13 +576,16 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        # _require_flashinfer_sm120() was already called by _select_dsv4_attn_cls
+        # before this constructor ran; the assertion below is a belt-and-suspenders
+        # guard for any direct instantiation paths that bypass the selector.
         from vllm.utils.flashinfer import has_flashinfer_sparse_mla_sm120
 
-        if not has_flashinfer_sparse_mla_sm120():
-            raise RuntimeError(
-                "FLASHINFER_MLA_SPARSE_DSV4 on SM120 requires FlashInfer's "
-                "sparse MLA decode API."
-            )
+        assert has_flashinfer_sparse_mla_sm120(), (
+            "DeepseekV4FlashInferSM120Attention constructed without the required "
+            "FlashInfer SM120 sparse-MLA API. Use _select_dsv4_attn_cls to "
+            "instantiate this class."
+        )
         self._einsum_recipe, self._tma_aligned_scales = compute_fp8_einsum_recipe()
         # Per-tensor FP8 cache path scales.
         if self.kv_cache_torch_dtype != torch.float8_e4m3fn:

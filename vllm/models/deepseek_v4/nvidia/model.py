@@ -757,6 +757,30 @@ class DeepseekV4MoE(nn.Module):
             self.experts.finalize_weights()
 
 
+def _require_flashinfer_sm120() -> None:
+    """Raise a clear RuntimeError if FlashInfer SM120 sparse-MLA is absent.
+
+    Checked at class-selection time so the error surfaces before the expensive
+    super().__init__() call inside DeepseekV4FlashInferSM120Attention.
+    """
+    from vllm.utils.flashinfer import has_flashinfer_sparse_mla_sm120
+
+    if has_flashinfer_sparse_mla_sm120():
+        return
+    raise RuntimeError(
+        "DeepSeek V4 on SM120 (consumer Blackwell, e.g. NVIDIA RTX PRO 6000 "
+        "Blackwell) requires FlashInfer built with SM120 sparse-MLA decode "
+        "support, which is not present in the current environment.\n\n"
+        "Install a compatible FlashInfer nightly (adjust CUDA / Torch tags "
+        "to match your installation):\n"
+        "  pip install flashinfer-python \\\n"
+        "      --index-url https://flashinfer.ai/whl/cu131/torch2.8/\n\n"
+        "Or pull the official vLLM image, which ships SM120 kernels:\n"
+        "  docker pull vllm/vllm-openai:latest\n\n"
+        "See https://github.com/vllm-project/vllm/issues/43412 for context."
+    )
+
+
 def _select_dsv4_attn_cls(vllm_config: VllmConfig) -> type[DeepseekV4Attention]:
     """Pick the CUDA sparse-MLA attention class for the configured backend.
 
@@ -778,6 +802,7 @@ def _select_dsv4_attn_cls(vllm_config: VllmConfig) -> type[DeepseekV4Attention]:
         )
     if backend == AttentionBackendEnum.FLASHINFER_MLA_SPARSE_DSV4:
         if device_capability is not None and device_capability.major == 12:
+            _require_flashinfer_sm120()
             return DeepseekV4FlashInferSM120Attention
         return DeepseekV4FlashInferMLAAttention
     if backend in (
@@ -787,6 +812,7 @@ def _select_dsv4_attn_cls(vllm_config: VllmConfig) -> type[DeepseekV4Attention]:
         return DeepseekV4FlashMLAAttention
 
     if device_capability is not None and device_capability.major == 12:
+        _require_flashinfer_sm120()
         return DeepseekV4FlashInferSM120Attention
     return DeepseekV4FlashMLAAttention
 
